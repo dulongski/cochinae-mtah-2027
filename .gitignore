@@ -62,3 +62,6 @@ __pycache__/
 venv/
 env/
 .DS_Store
+
+# Cochinae: rendered document lives next to the code but is uploaded, not committed
+Cochinae.pdf

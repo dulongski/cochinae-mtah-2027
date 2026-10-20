@@ -1,6 +1,6 @@
 # Cochinae — frame-level possession from automatic tracking
 
-**Team:** Cochinae (Sebastian Dulong Salazar, Santiago Fernández del Castillo)  
+**Team:** Cochinae (Sebastian Dulong Salazar, Santiago Fernández del Castillo, Ulises Quevedo)  
 **Challenge:** More than a Hack 2027, Phase 1 — Ball Possession (FC Barcelona vs Athletic Club)  
 **Code:** this repository. `./reproduce.sh` regenerates `Cochinae.csv` byte for byte.
 
@@ -76,7 +76,7 @@ regression, 8 coefficients), and inside that window its predictions are out-of-f
 | Public 5-min ground truth | dead-ball model + sanity checks | never used to train the team models |
 | Smart Tagging | **dropped** | Its team tags put the right team in possession on only 70% of public live frames, worse than team shape. Its set-piece intervals added nothing to the dead-ball model once the physical cues were in. |
 | Broadcast ATD | **tried, not in the final pipeline** | `align.py` aligns it to the tactical timeline: the offset is near-constant per half (≈4,015 and ≈26,921 frames) and 95% of coarse matches agree within 1 m. But it supplies a ball on only 8.5% of the frames where the tactical ball is missing, because both cameras lose the ball in the same moments. |
-| Homography, videos | not used | The tracking is already in pitch coordinates. A video ball detector is the obvious next step (§6). |
+| Tactical video + homography | **in progress** | `cochinae/video_ball.py`: COCO-pretrained YOLOv8s ("sports ball") at full resolution, run only where the ATD has no ball and play may be live (≈14k frames). Detections go to the pitch through the inverse homography and are kept only when temporally consistent. Not yet part of the submitted file. |
 
 Tried and dropped, besides the above: a "last controller keeps it" rule (best public spellF1 0.59
 using our own dead-ball mask, vs 0.60 for the HMM with the same mask), and snapping
@@ -99,6 +99,25 @@ physical reasoning and from full-match plausibility, which needs no labels. On t
 the model reports 265 possessions, mean 12.4 s, and 45% of graded frames dead. Those figures
 are consistent with the 14.2 s mean possession in the public window and with typical
 ball-in-play time in LaLiga.
+
+### Robustness checks (no ground truth needed)
+
+The public window is too small to choose settings, so we checked stability on the full match
+instead. We perturbed one parameter at a time and scored each perturbed run against the
+reference run with the official metric.
+
+| perturbation | agreement with reference (spellF1) |
+|---|---|
+| switching cost 20–40, self-training switching cost 20–40 | 0.89–0.99 |
+| dead-ball entry cost 10–30, minimum stoppage 1–4 s | 0.92–0.94 |
+| dead-ball regularisation C 0.005–1.0 (200× range) | 0.88–0.92 |
+| restart search window 4–8 s, self-training lag 0–10 frames | 0.96–0.99 |
+| shape lag 0–45 frames, proximity weight 0.6–2.0 | 0.83–0.90 (the most sensitive) |
+
+For the two most sensitive parameters we ran a 3×3 grid and picked the **medoid**: the output
+that agrees best with the other eight. It is the setting we already use (weight 1.2, lag 30),
+with a mean agreement of 0.875. The chosen point sits in the middle of a flat region, not on
+an edge tuned to 17 public possessions.
 
 ## 6. Limitations and what we would do next
 

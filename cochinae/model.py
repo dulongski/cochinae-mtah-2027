@@ -53,12 +53,15 @@ PARAMS = {
     "self_lag": 5,
     "refine_before": 150,  # frames searched before a decoded D boundary
     "refine_after": 50,
+    "dead_C": 0.05,        # L2 strength of the dead-ball logistic (fit on 4 stoppages: keep it strong)
+    "video_conf": 0.25,    # provisional; set from the calibration sample in video_ball.py
     "sw_cost_self": 30.0,
 }
 
 
-def shape_probs(xy, sp, team, sign, y, labelled, half, block, cache_name="shape_oof.npy"):
-    path = os.path.join(CACHE, cache_name)
+def shape_probs(xy, sp, team, sign, y, labelled, half, block):
+    key = hashlib.sha1(y.tobytes() + labelled.tobytes() + str(block).encode()).hexdigest()[:10]
+    path = os.path.join(CACHE, "shape_%s.npy" % key)
     if os.path.exists(path):
         return np.load(path)
     S, names = F.team_shape(xy, sp, team, sign)
@@ -142,12 +145,14 @@ def viterbi(ll, sw_cost, dead_cost, dead_min):
     return np.minimum(path, 2)
 
 
-def run(params=PARAMS, gt=None, verbose=True, drop_ball=None):
+def run(params=PARAMS, gt=None, verbose=True, drop_ball=None, use_video=True):
     """drop_ball: optional boolean mask of frames on which to hide the ball (robustness tests)."""
     xy, sp, ball, team, tags = load_cache()
     if drop_ball is not None:
         ball = ball.copy()
         ball[drop_ball] = np.nan
+    if use_video:
+        ball = fill_from_video(ball, params)
     n = len(xy)
     half = F.halves_mask(n)
     sign = F.attack_sign(xy, team, half)
@@ -178,7 +183,7 @@ def run(params=PARAMS, gt=None, verbose=True, drop_ball=None):
     y = (gt[a:b] == "D").astype(int)
 
     def fit(rows):
-        return LogisticRegression(C=0.05, class_weight="balanced", max_iter=1000).fit(
+        return LogisticRegression(C=params["dead_C"], class_weight="balanced", max_iter=1000).fit(
             Z[a:b][rows], y[rows])
     p_dead = fit(np.ones(b - a, bool)).predict_proba(Z)[:, 1]
     fold = np.arange(b - a) * 4 // (b - a)
@@ -259,6 +264,33 @@ def self_train(xy, ball, team, sign, half, bf, labels, params, it):
         p[te] = clf.predict_proba(X[te])[:, 1]
     np.save(path, p)
     return p
+
+
+def fill_from_video(ball, params):
+    """Fill missing ATD ball positions with video detections (see video_ball.py), if present.
+
+    A detection is used when its confidence clears `video_conf`, it lies on the pitch (2 m
+    margin) and another accepted detection within +/-3 frames is within 3 m of it: isolated hits
+    are mostly heads, boots and penalty spots.
+    """
+    path = os.path.join(CACHE, "video_ball.npz")
+    if not os.path.exists(path):
+        return ball
+    z = np.load(path)
+    frames, cand = z["frame"], z["cand"][:, 0, :]          # best candidate per frame
+    x, y, c = cand[:, 0], cand[:, 1], cand[:, 2]
+    ok = (c >= params["video_conf"]) & (x > -2) & (x < F.LENGTH + 2) & (y > -2) & \
+        (y < F.WIDTH + 2) & ~np.isfinite(ball[frames, 0])
+    pos = np.full((len(ball), 2), np.nan)
+    pos[frames[ok]] = np.c_[x[ok], y[ok]]
+    keep = np.zeros(len(ball), bool)
+    for d in (-3, -2, -1, 1, 2, 3):
+        other = np.roll(pos, -d, axis=0)
+        keep |= np.linalg.norm(pos - other, axis=1) < 3.0
+    keep &= np.isfinite(pos[:, 0])
+    ball = ball.copy()
+    ball[keep, 0], ball[keep, 1] = pos[keep, 0], pos[keep, 1]
+    return ball
 
 
 def shift(x, lag):
