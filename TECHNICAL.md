@@ -1,7 +1,7 @@
 # Cochinae — frame-level possession from automatic tracking
 
-**Team:** Cochinae (Sebastian Dulong Salazar, Santiago Fernández del Castillo)
-**Challenge:** More than a Hack 2027, Phase 1 — Ball Possession (FC Barcelona vs Athletic Club)
+**Team:** Cochinae (Sebastian Dulong Salazar, Santiago Fernández del Castillo)  
+**Challenge:** More than a Hack 2027, Phase 1 — Ball Possession (FC Barcelona vs Athletic Club)  
 **Code:** this repository. `./reproduce.sh` regenerates `Cochinae.csv` byte for byte.
 
 ---
