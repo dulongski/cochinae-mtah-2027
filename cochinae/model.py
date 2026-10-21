@@ -54,6 +54,7 @@ PARAMS = {
     "refine_before": 150,  # frames searched before a decoded D boundary
     "refine_after": 50,
     "dead_C": 0.05,        # L2 strength of the dead-ball logistic (fit on 4 stoppages: keep it strong)
+    "video_source": None,  # "yolo" | "fab": which video detections fill ATD ball gaps
     "video_conf": 0.25,    # provisional; set from the calibration sample in video_ball.py
     "sw_cost_self": 30.0,
 }
@@ -273,7 +274,9 @@ def fill_from_video(ball, params):
     margin) and another accepted detection within +/-3 frames is within 3 m of it: isolated hits
     are mostly heads, boots and penalty spots.
     """
-    path = os.path.join(CACHE, "video_ball.npz")
+    if not params["video_source"]:
+        return ball
+    path = os.path.join(CACHE, "video_ball_%s.npz" % params["video_source"])
     if not os.path.exists(path):
         return ball
     z = np.load(path)

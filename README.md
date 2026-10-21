@@ -4,7 +4,9 @@ Our entry to the [More than a Hack 2027](https://github.com/metrica-sports/more-
 possession challenge: label every frame of FC Barcelona vs Athletic Club as `H`, `A` or `D` from
 automatic tracking.
 
-**How it works, what we tried and dropped, and its limits: [TECHNICAL.md](TECHNICAL.md).**
+**Paper (method, ablations, robustness, negative results): [paper/PAPER.md](paper/PAPER.md)** · [PDF](paper/PAPER.pdf)
+
+**Technical document for the submission: [TECHNICAL.md](TECHNICAL.md)** · [PDF](TECHNICAL.pdf)
 
 In short: a self-supervised team-shape classifier (who has the ball, read from the 22 players)
 plus ball-proximity evidence plus a physical dead-ball model, decoded as whole possessions with
@@ -32,7 +34,10 @@ exactly; the script prints its SHA-256.
 ## Layout
 
 ```
-cochinae/            our code (load, feats, model, refine, evalu; align/broadcast = experiment)
+cochinae/            our code (load, feats, model, refine, evalu)
+                     experiments: align/broadcast (broadcast feed), video_ball (ball detectors),
+                     progress (live progress bars for long runs)
+paper/               the paper, its figures, and the scripts that regenerate them
 reproduce.sh         the one command that regenerates the submission
 TECHNICAL.md         the technical document
 requirements-cochinae.txt

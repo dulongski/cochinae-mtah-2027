@@ -76,7 +76,7 @@ regression, 8 coefficients), and inside that window its predictions are out-of-f
 | Public 5-min ground truth | dead-ball model + sanity checks | never used to train the team models |
 | Smart Tagging | **dropped** | Its team tags put the right team in possession on only 70% of public live frames, worse than team shape. Its set-piece intervals added nothing to the dead-ball model once the physical cues were in. |
 | Broadcast ATD | **tried, not in the final pipeline** | `align.py` aligns it to the tactical timeline: the offset is near-constant per half (≈4,015 and ≈26,921 frames) and 95% of coarse matches agree within 1 m. But it supplies a ball on only 8.5% of the frames where the tactical ball is missing, because both cameras lose the ball in the same moments. |
-| Tactical video + homography | **in progress** | `cochinae/video_ball.py`: COCO-pretrained YOLOv8s ("sports ball") at full resolution, run only where the ATD has no ball and play may be live (≈14k frames). Detections go to the pitch through the inverse homography and are kept only when temporally consistent. Not yet part of the submitted file. |
+| Tactical video + homography | **tried, dropped** | `cochinae/video_ball.py` runs a detector only where the ATD has no ball and play may be live. Checked on 2,000 frames where the ATD does have the ball: COCO YOLOv8s at confidence ≥ 0.6 fires on 22% of frames and only 50% of those are within 2 m. FootAndBall fires on 29% and under 5% are within 2 m. The ball is 3–5 px in this full-pitch shot. Only about 5% of graded frames are live with no ball, so the gain is capped. Full write-up in [paper/PAPER.md](paper/PAPER.md). |
 
 Tried and dropped, besides the above: a "last controller keeps it" rule (best public spellF1 0.59
 using our own dead-ball mask, vs 0.60 for the HMM with the same mask), and snapping
@@ -127,8 +127,8 @@ an edge tuned to 17 public possessions.
   about 5 of 12 public switches are not matched within 6 s.
 - **The dead-ball model is fit on 4 stoppages.** It uses few, physical features to limit
   overfitting, but it is the stage most exposed to the next match being different.
-- **Next:** run a ball detector on the tactical video, inside the frames where the ATD ball is
-  missing and play is live, and feed it to the touch evidence. Use the broadcast alignment to
+- **Next:** fine-tune a ball detector on this camera, using tracked ball positions projected
+  through the homography as automatic labels (off-the-shelf detectors failed, see above). Use the broadcast alignment to
   recover the ball during replays. Learn the switching cost per field zone: switches are more
   frequent in midfield duels than in a team's own third.
 
