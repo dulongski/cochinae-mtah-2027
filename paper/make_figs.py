@@ -20,6 +20,9 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "figs")
 os.makedirs(OUT, exist_ok=True)
 D = json.load(open(os.path.join(CACHE, "fig_data.json")))
 A = json.load(open(os.path.join(CACHE, "ablation.json")))
+if not D.get("calib"):   # detector runs are slow and optional; their aggregates live in the repo
+    D["calib"] = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                             "detector_calibration.json")))
 
 plt.rcParams.update({"font.size": 9, "font.family": "sans-serif",
                      "axes.spines.top": False, "axes.spines.right": False})
@@ -28,11 +31,11 @@ t = np.array(D["offs"]) / 25
 
 # 1. ablation ladder
 short = ["proximity\nonly", "shape\nonly", "shape + prox\n+ dead + Viterbi", "+ lag\ncorrection",
-         "+ self-\ntraining", "+ boundary\nrefinement"]
+         "+ self-\ntraining", "+ boundary\nrefinement", "+ SkillCorner\n(final)"]
 names = ["baseline\n(smooth50)"] + short
 spell = [0.3256] + [r[1] for r in A]
 macro = [0.6207] + [r[2] for r in A]
-fig, ax = plt.subplots(figsize=(7.2, 2.8))
+fig, ax = plt.subplots(figsize=(7.6, 2.8))
 x, w = np.arange(len(names)), 0.38
 ax.bar(x - w / 2, macro, w, color=GREY, label="macroF1")
 bars = ax.bar(x + w / 2, spell, w, color=INK, label="spellF1 (ranking)")

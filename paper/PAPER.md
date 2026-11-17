@@ -1,4 +1,4 @@
-# Who Has the Ball? Frame-Level Possession from Uncorrected Tracking with Self-Supervised Team Shape and Duration-Constrained Decoding
+# Who Has the Ball? Frame-Level Possession from Uncorrected Tracking with Team Shape, External Supervision and Duration-Constrained Decoding
 
 **Sebastian Dulong Salazar, Santiago Fernández del Castillo, Ulises Quevedo**  
 Team Cochinae · More than a Hack 2027 (Metrica Sports × FC Barcelona × Mobile World Capital)
@@ -20,15 +20,18 @@ We combine three signals:
 3. A **physical dead-ball model**, an 8-feature logistic regression on player and ball motion.
 
 A Viterbi decoder with switching costs and a minimum stoppage length turns these into whole
-possessions. One round of self-training follows, then a boundary refinement that places restarts
-at the players' slowest moment.
+possessions. One round of self-training follows. Then the same features, computed on **20
+public SkillCorner matches with provider possession phases**, train supervised team and
+dead-ball classifiers that drive the final decode. A boundary refinement places restarts at the
+players' slowest moment.
 
-On the public 5-minute window the method reaches **spellF1 0.542 / macroF1 0.867**, against
-0.326 / 0.621 for the published baseline. No stage uses hand labels. Settings were chosen by
+On the public 5-minute window the method reaches **spellF1 0.621 / macroF1 0.905**, against
+0.326 / 0.621 for the published baseline (0.542 / 0.867 without the external data). No stage
+uses hand labels. Settings were chosen by
 label-free stability analysis, not by tuning on the 17 public possessions, and the output is
 reproducible byte for byte. We also report what did not work: tactical tagging as a team prior,
-a last-controller rule, broadcast tracking as a ball source, and two off-the-shelf video ball
-detectors.
+a last-controller rule, ball-track cleaning, broadcast tracking as a ball source, and two
+off-the-shelf video ball detectors.
 
 ---
 
@@ -150,6 +153,44 @@ error from 75 to 34 frames.
 ball, and the shape model's P(new team), around team switches. Shape evidence crosses 0.5 about
 1 s after the switch, which is the lag we correct.*
 
+### 3.7 External supervision (SkillCorner open data)
+
+The self-supervised stages never see a real possession label from this match. SkillCorner's
+open data (20 matches, MIT licence) provides broadcast tracking at 10 Hz plus *phases of play*:
+intervals with the team in possession. We resample each match to 25 Hz, move it to the same
+coordinates as the challenge tracking, and run **the exact feature code used on BAR–ATH**:
+99 shape, 14 ball-context and 8 dead-ball features. Frames inside a period that no phase covers
+are labelled dead ball, so the dead-ball labels are weak. Every frame is added a second time with
+the teams swapped and the label flipped, so the classifiers cannot learn which side is "home".
+That gives 591k training rows, one every 0.4 s.
+
+Two gradient-boosted classifiers are trained on all 20 matches: P(away) on live frames and
+P(dead) on all frames. On 4 held-out matches (trained on the other 16) the team classifier is
+right on **93.6%** of live frames and the dead-ball classifier reaches **AUC 0.985**.
+
+In the final decode the SkillCorner team evidence replaces ours, and the two dead-ball
+probabilities are averaged in log-odds. The table shows each weight on the public window:
+
+| SkillCorner weight (team / dead) | spellF1 | macroF1 |
+|---|---|---|
+| 0 / 0 (self-supervised only) | 0.542 | 0.867 |
+| 0.5 / 0.5 | 0.587 | 0.891 |
+| 1 / 0 | 0.621 | 0.887 |
+| 1 / 0.5 | 0.643 | 0.908 |
+| 1 / 1 | 0.621 | 0.894 |
+
+With sharper evidence the old switching cost (30) merges too much: about 220 full-match
+possessions of mean 15.5 s. We lower it to 20, which gives 234 possessions of mean 14.6 s, the
+closest to the 14.2 s of the public truth. Public spellF1 at that cost is 0.621 against 0.643 at
+30: one possession out of 17. We chose the setting with the more plausible full match over the
+better public number.
+
+### 3.8 A known stoppage
+
+The FAQ states that graded frames 110,808–113,741 precede the second-half kickoff and are all
+dead ball. We set them to D after decoding. 1,746 of those frames had been decoded as live. The
+first half is graded from its kickoff, so the public window is unaffected.
+
 ## 4. Results
 
 ### 4.1 Ablation (public window)
@@ -162,7 +203,8 @@ ball, and the shape model's P(new team), around team switches. Shape evidence cr
 | shape + proximity + dead + Viterbi | 0.508 | 0.823 | 20 | 293 / 11.1 s |
 | + lag correction | 0.467 | 0.814 | 19 | 302 / 10.8 s |
 | + self-training | 0.503 | 0.833 | 14 | 272 / 12.1 s |
-| **+ boundary refinement (final)** | **0.542** | **0.867** | 14 | 269 / 13.1 s |
+| + boundary refinement | 0.542 | 0.867 | 14 | 269 / 13.1 s |
+| **+ SkillCorner classifiers + known stoppage (final)** | **0.621** | **0.905** | 12 | 234 / 14.6 s |
 
 ![Ablation](figs/ablation.png)
 *Figure 1. Ablation on the public window.*
@@ -172,6 +214,8 @@ steps in this table are not statistically separable. Two numbers are informative
 
 - The jump from either signal alone (0.36–0.39) to their combination under the decoder (0.51).
 - The macroF1 gain from refinement (0.833 → 0.867), which comes from restart timing.
+- The gain from external supervision (0.867 → 0.905 macroF1), which is consistent with its
+  93.6% held-out accuracy on other matches.
 
 The lag correction lowers the public score at that intermediate step: 0.508 to 0.467, which is
 one possession out of 17. In the final pipeline it does not. With every other stage in place,
@@ -181,7 +225,8 @@ region of §4.2.
 
 ### 4.2 Robustness without labels
 
-We could not use 17 possessions to choose settings. Instead we perturbed one parameter at a time
+This analysis was run on the self-supervised model (before §3.7). We could not use 17
+possessions to choose settings. Instead we perturbed one parameter at a time
 and scored each perturbed run against the reference run on the **full match** with the official
 metric:
 
@@ -204,6 +249,7 @@ mean agreement of 0.875. On the full match the model reports 269 possessions wit
 |---|---|---|
 | Smart Tagging team tags as possession prior | 70% of live public frames on the right team (shape alone: 87.5%) | its intervals are phases, not possessions |
 | Smart Tagging set pieces in the dead-ball model | no gain over the physical cues | redundant |
+| Ball-track cleaning (drop jumps over 40 m/s, bridge gaps up to 0.4 s) | public spellF1 0.542 → 0.512 | no measurable gain; off |
 | "Last controller keeps it" rule (radius r, k frames of control) | best public spellF1 0.59 vs 0.60 for the decoder, with the same dead-ball mask | brittle to ball noise, no evidence when the ball is missing |
 | Snap team switches to the ball-proximity changepoint | median switch error 16 → 26 frames | in uncorrected tracking the true switch is not where the new team first reaches the ball |
 | Broadcast tracking as a second ball source | aligned to the tactical clock (offset ≈ 4,015 / 26,921 frames per half; 95% of coarse matches within 1 m), but it adds a ball on only 8.5% of missing frames | both cameras lose the ball at the same moments |
@@ -221,12 +267,15 @@ the evaluation noise.
 ## 6. Limitations and future work
 
 - **Short possessions.** Spells under about 2 s (a touch immediately lost) are mostly merged into
-  their neighbours: 7% of our spells are under 2 s, against 18% in the public truth. This is a
+  their neighbours: 9% of our spells are under 2 s, against 18% in the public truth. This is a
   deliberate trade, because spellF1 charges a split possession twice, but it is where most of
   the remaining recall is.
-- **Dead-ball model.** It is fit on four stoppages. Physical, low-dimensional features limit the
-  damage, and it moves little under a 200× change in regularisation, but it is the component
-  most exposed to a new match.
+- **Dead-ball labels.** Our own dead-ball model is fit on four stoppages, and SkillCorner's
+  dead-ball labels are the complement of its phases, which can stop short of a stoppage.
+  Averaging the two limits the damage of either, but this remains the weakest label we use.
+- **Domain shift.** SkillCorner tracking comes from broadcast video with players extrapolated
+  off-screen; the challenge tracking comes from a tactical camera. Both are resampled to the
+  same features, and the held-out accuracy transfers, but the calibration need not.
 - **Detector on this camera.** The natural next step is to fine-tune a small detector on *this*
   camera, with labels generated automatically by projecting the 113k tracked ball positions into
   the video through the homography. No hand labelling is involved, and it targets exactly the
@@ -236,8 +285,10 @@ the evaluation noise.
 
 ## 7. Reproducibility and data handling
 
-`./reproduce.sh` clears every cached result, parses the data, runs the model and validates the
-file. Two from-scratch runs produce the same CSV, byte for byte (about 3 minutes on an Apple M1).
+`./reproduce.sh` clears every cached result, parses the data, downloads SkillCorner's open data
+at a pinned commit (about 1.9 GB, kept if present), builds and fits its classifiers, runs the
+model and validates the file. From-scratch runs produce the same CSV byte for byte (about 25
+minutes on an Apple M1).
 The classifiers use fixed seeds and no random validation splits, and caches are keyed by content
 hashes. `paper/collect.py` and `paper/make_figs.py` regenerate every number and figure in this
 document.
@@ -254,5 +305,7 @@ derivatives: the figures are medians over events and calibration shares.
 - J. Komorowski, G. Kurzejamski, G. Sarwas. *FootAndBall: Integrated player and ball detector.*
   VISAPP 2020.
 - G. Jocher et al. *Ultralytics YOLOv8*, 2023.
+- SkillCorner and PySport, *SkillCorner open data*, github.com/SkillCorner/opendata
+  (commit 4340d27), MIT licence.
 - G. D. Forney. *The Viterbi algorithm.* Proceedings of the IEEE, 1973.
 - F. Pedregosa et al. *Scikit-learn: Machine learning in Python.* JMLR, 2011.

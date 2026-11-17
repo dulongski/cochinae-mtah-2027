@@ -10,11 +10,14 @@ automatic tracking.
 
 In short: a self-supervised team-shape classifier (who has the ball, read from the 22 players)
 plus ball-proximity evidence plus a physical dead-ball model, decoded as whole possessions with
-a Viterbi pass. Then one round of self-training and a restart/stoppage boundary refinement.
+a Viterbi pass. Then one round of self-training, supervised classifiers trained on 20 public
+SkillCorner matches (open data, MIT; credit SkillCorner and PySport), and a restart/stoppage
+boundary refinement.
 
 | public 5-min window | macroF1 | spellF1 |
 |---|---|---|
-| **Cochinae** | **0.867** | **0.542** |
+| **Cochinae** | **0.905** | **0.621** |
+| Cochinae without SkillCorner data | 0.867 | 0.542 |
 | baseline_smooth50 (published floor) | 0.621 | 0.326 |
 
 ## Reproduce
@@ -25,7 +28,7 @@ from the organisers and point `MTAH_DATA_DIR` at it (it must contain `tactical/`
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-cochinae.txt
-MTAH_DATA_DIR=/path/to/bundle ./reproduce.sh     # ~3 min -> evaluation/results/Cochinae.csv
+MTAH_DATA_DIR=/path/to/bundle ./reproduce.sh     # ~25 min -> evaluation/results/Cochinae.csv
 ```
 
 The run is deterministic and starts from an empty cache, so it regenerates the submitted file

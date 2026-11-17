@@ -35,13 +35,15 @@ def full_stats(lab):
 
 
 def ablation(gt):
-    off = dict(self_iters=0, shape_lag=0, self_lag=0, refine_before=0, refine_after=0)
+    no_sc = dict(sc_team_w=0.0, sc_dead_w=0.0, sw_cost_self=30.0)
+    off = dict(no_sc, self_iters=0, shape_lag=0, self_lag=0, refine_before=0, refine_after=0)
     ladder = [("ball proximity only", dict(off, shape_w=0.0)),
               ("team shape only", dict(off, prox_scale=0.0)),
               ("shape + proximity + dead + Viterbi", off),
               ("+ lag correction", dict(off, shape_lag=30)),
               ("+ self-training", dict(off, shape_lag=30, self_iters=1, self_lag=5)),
-              ("+ boundary refinement (final)", {})]
+              ("+ boundary refinement", no_sc),
+              ("+ SkillCorner + known stoppage (final)", {})]
     rows = []
     for name, over in ladder:
         lab, _ = M.run(dict(M.PARAMS, **over), gt=gt)

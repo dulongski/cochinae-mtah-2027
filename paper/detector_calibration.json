@@ -1,0 +1,5 @@
+{
+  "_note": "Aggregate calibration of off-the-shelf ball detectors on 2,000 random frames where the ATD has the ball (cochinae/video_ball.py calib). share = frames with a detection at >= th; within2 = share of those within 2 m of the tracked ball.",
+  "yolo": {"th": [0.05, 0.15, 0.25, 0.4, 0.6], "share": [1.0, 0.952, 0.811, 0.532, 0.216], "within2": [0.307, 0.317, 0.348, 0.424, 0.498]},
+  "fab":  {"th": [0.05, 0.15, 0.25, 0.4, 0.6], "share": [0.291, 0.208, 0.167, 0.138, 0.101], "within2": [0.046, 0.041, 0.030, 0.022, 0.015]}
+}
