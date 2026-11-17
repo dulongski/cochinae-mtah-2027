@@ -18,6 +18,7 @@ sys.path.insert(0, ROOT)
 from games import DATA_DIR  # noqa: E402
 
 LOGS = os.path.join(DATA_DIR, "logs")
+MATCH = re.compile(r"^match \d+")
 LINE = re.compile(r"processed (\d+)/(\d+)\s+([\d.]+) fps\s+eta (\d+) min")
 WIDTH = 32
 
@@ -31,11 +32,15 @@ def render():
     rows = []
     for path in sorted(glob.glob(os.path.join(LOGS, "*.log"))):
         name = os.path.basename(path)[:-4]
-        with open(path, errors="replace") as fh:
-            lines = [l.strip() for l in fh if l.strip()]
-        done = any(l.startswith("done:") for l in lines)
+        try:
+            with open(path, errors="replace") as fh:
+                lines = [l.strip() for l in fh if l.strip()]
+        except OSError:
+            continue                      # e.g. a link to a log that no longer exists
+        done = any(l.startswith(("done:", "built", "saved")) for l in lines)
         last = next((m for m in map(LINE.search, reversed(lines)) if m), None)
         age = time.time() - os.path.getmtime(path)
+        n_match = sum(bool(MATCH.match(l)) for l in lines)
         if done:
             rows.append("%-14s %s 100%%  terminado" % (name, bar(1.0)))
         elif last:
@@ -43,8 +48,15 @@ def render():
             state = "  (sin avance hace %d min)" % (age // 60) if age > 300 else ""
             rows.append("%-14s %s %3d%%  %d/%d  %s fps  faltan ~%s min%s"
                         % (name, bar(a / b), 100 * a // b, a, b, fps, eta, state))
+        elif n_match:
+            # per-match jobs (SkillCorner download / feature build): progress = matches done
+            total = len(glob.glob(os.path.join(DATA_DIR, "skillcorner", "[0-9]*"))) or 20
+            spent = os.path.getmtime(path) - os.stat(path).st_birthtime
+            eta = spent / n_match * (total - n_match) / 60
+            rows.append("%-14s %s %3d%%  %d/%d partidos  faltan ~%.0f min"
+                        % (name, bar(n_match / total), 100 * n_match // total, n_match, total, eta))
         else:
-            rows.append("%-14s %s   ..  arrancando" % (name, bar(0.0)))
+            rows.append("%-14s %s   ..  en curso" % (name, bar(0.0)))
     return rows or ["(no hay corridas en %s)" % LOGS]
 
 

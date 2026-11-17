@@ -55,9 +55,12 @@ PARAMS = {
     "refine_before": 150,  # frames searched before a decoded D boundary
     "refine_after": 50,
     "dead_C": 0.05,        # L2 strength of the dead-ball logistic (fit on 4 stoppages: keep it strong)
+    "ball_clean": False,   # drop >40 m/s jumps, bridge gaps <= 0.4 s
+    "sc_team_w": 1.0,      # weight of the SkillCorner team classifier in the final decode
+    "sc_dead_w": 0.5,      # weight of the SkillCorner dead-ball classifier (blended with ours)
     "video_source": None,  # "yolo" | "fab": which video detections fill ATD ball gaps
     "video_conf": 0.25,    # provisional; set from the calibration sample in video_ball.py
-    "sw_cost_self": 30.0,
+    "sw_cost_self": 20.0,  # with SkillCorner evidence: mean possession closest to the public 14.2 s
 }
 
 
@@ -155,6 +158,8 @@ def run(params=PARAMS, gt=None, verbose=True, drop_ball=None, use_video=True):
         ball[drop_ball] = np.nan
     if use_video:
         ball = fill_from_video(ball, params)
+    if params["ball_clean"]:
+        ball = clean_ball(ball)
     n = len(xy)
     half = F.halves_mask(n)
     sign = F.attack_sign(xy, team, half)
@@ -203,6 +208,15 @@ def run(params=PARAMS, gt=None, verbose=True, drop_ball=None, use_video=True):
         logit_home = -np.log(p_away / (1 - p_away))
         labels = decode(logit_home, p_dead, params, params["sw_cost_self"])
 
+    # 5b. external supervision: classifiers trained on 20 labelled SkillCorner matches
+    if params["sc_team_w"] > 0 or params["sc_dead_w"] > 0:
+        p_away_sc, p_dead_sc = skillcorner_probs(xy, sp, team, sign, bf, D)
+        lg = lambda p: np.log(p / (1 - p))  # noqa: E731
+        logit_home = (1 - params["sc_team_w"]) * logit_home - params["sc_team_w"] * lg(p_away_sc)
+        z = (1 - params["sc_dead_w"]) * lg(p_dead) + params["sc_dead_w"] * lg(p_dead_sc)
+        p_dead = np.clip(1 / (1 + np.exp(-z)), 0.01, 0.99)
+        labels = decode(logit_home, p_dead, params, params["sw_cost_self"])
+
     # 6. boundary refinement: restarts at the players' slowest moment, stoppages where they slow
     labels = refine_dead(labels, sp, params["refine_before"], params["refine_after"], "min")
 
@@ -234,6 +248,30 @@ def ball_context(bf, sign):
     return np.stack([dH, dA, dH - dA, R(dH, 12), R(dA, 12), R(dH - dA, 12), R(dH - dA, 25),
                      R(dH - dA, 50), bx, R(bx, 25), bvx, R(bvx, 12), vis, R(vis, 25)],
                     1).astype(np.float32)
+
+
+def shape_matrix(xy, sp, team, sign):
+    """The 99 shape features (33 descriptors + two context windows), cached."""
+    px = os.path.join(CACHE, "shapeX.npy")
+    if not os.path.exists(px):
+        S, names = F.team_shape(xy, sp, team, sign)
+        X, _ = F.with_context(S, names)
+        np.save(px, X.astype(np.float32))
+    return np.load(px)
+
+
+def skillcorner_probs(xy, sp, team, sign, bf, D):
+    """P(away) and P(dead) from the SkillCorner-trained classifiers (see skillcorner.py).
+
+    The feature matrix is built exactly as in training: shape + ball context + dead-ball cues.
+    """
+    import pickle
+    with open(os.path.join(CACHE, "sc_models.pkl"), "rb") as fh:
+        m = pickle.load(fh)
+    X = np.concatenate([shape_matrix(xy, sp, team, sign), ball_context(bf, sign), D], 1)
+    p_away = m["team"].predict_proba(X)[:, 1]
+    p_dead = m["dead"].predict_proba(X)[:, 1]
+    return np.clip(p_away, 0.02, 0.98), np.clip(p_dead, 0.01, 0.99)
 
 
 def self_train(xy, ball, team, sign, half, bf, labels, params, it):
@@ -270,6 +308,27 @@ def self_train(xy, ball, team, sign, half, bf, labels, params, it):
         p[te] = clf.predict_proba(X[te])[:, 1]
     np.save(path, p)
     return p
+
+
+def clean_ball(ball, max_speed=40.0, max_gap=10):
+    """Drop physically impossible ball jumps, then bridge gaps of up to max_gap frames (0.4 s).
+
+    A jump faster than max_speed m/s from the previous tracked position is a tracker switch to
+    another object; the bridged gaps are short enough that the ball cannot have changed hands.
+    """
+    b = ball.copy()
+    seen = np.flatnonzero(np.isfinite(b[:, 0]))
+    if len(seen) < 2:
+        return b
+    step = np.linalg.norm(np.diff(b[seen, :2], axis=0), axis=1) / np.diff(seen) * F.FPS
+    b[seen[1:][step > max_speed], :2] = np.nan
+    seen = np.flatnonzero(np.isfinite(b[:, 0]))
+    gaps = np.diff(seen)
+    for i in np.flatnonzero((gaps > 1) & (gaps <= max_gap + 1)):
+        a, c = seen[i], seen[i + 1]
+        w = (np.arange(a + 1, c) - a) / (c - a)
+        b[a + 1:c, :2] = b[a, :2] * (1 - w)[:, None] + b[c, :2] * w[:, None]
+    return b
 
 
 def fill_from_video(ball, params):
