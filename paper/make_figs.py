@@ -31,11 +31,11 @@ t = np.array(D["offs"]) / 25
 
 # 1. ablation ladder
 short = ["proximity\nonly", "shape\nonly", "shape + prox\n+ dead + Viterbi", "+ lag\ncorrection",
-         "+ self-\ntraining", "+ boundary\nrefinement", "+ SkillCorner\n(final)"]
+         "+ self-\ntraining", "+ boundary\nrefinement", "+ SkillCorner\nblended (dev)", "submitted:\nexternal only"]
 names = ["baseline\n(smooth50)"] + short
 spell = [0.3256] + [r[1] for r in A]
 macro = [0.6207] + [r[2] for r in A]
-fig, ax = plt.subplots(figsize=(7.6, 2.8))
+fig, ax = plt.subplots(figsize=(8.2, 2.9))
 x, w = np.arange(len(names)), 0.38
 ax.bar(x - w / 2, macro, w, color=GREY, label="macroF1")
 bars = ax.bar(x + w / 2, spell, w, color=INK, label="spellF1 (ranking)")

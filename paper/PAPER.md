@@ -20,15 +20,15 @@ We combine three signals:
 3. A **physical dead-ball model**, an 8-feature logistic regression on player and ball motion.
 
 A Viterbi decoder with switching costs and a minimum stoppage length turns these into whole
-possessions. One round of self-training follows. Then the same features, computed on **20
-public SkillCorner matches with provider possession phases**, train supervised team and
-dead-ball classifiers that drive the final decode. A boundary refinement places restarts at the
-players' slowest moment.
+possessions. That was our development version. **The submitted version** computes the same
+features on **20 public SkillCorner matches with provider possession phases**. Supervised team
+and dead-ball classifiers are trained there, and every decoder setting is chosen by
+cross-validation there. Nothing is fitted or tuned on the challenge's ground truth, as the
+organisers' 3 November clarification requires.
 
-On the public 5-minute window the method reaches **spellF1 0.621 / macroF1 0.905**, against
-0.326 / 0.621 for the published baseline (0.542 / 0.867 without the external data). No stage
-uses hand labels. Settings were chosen by
-label-free stability analysis, not by tuning on the 17 public possessions, and the output is
+The submitted pipeline scores **spellF1 0.697 / macroF1 0.909 on 20 held-out SkillCorner
+matches**. On the BAR–ATH public 5-minute window, scored only as a check, it reaches **0.607 /
+0.843**; the published baseline gets 0.326 / 0.621. No stage uses hand labels, and the output is
 reproducible byte for byte. We also report what did not work: tactical tagging as a team prior,
 a last-controller rule, ball-track cleaning, broadcast tracking as a ball source, and two
 off-the-shelf video ball detectors.
@@ -153,7 +153,7 @@ error from 75 to 34 frames.
 ball, and the shape model's P(new team), around team switches. Shape evidence crosses 0.5 about
 1 s after the switch, which is the lag we correct.*
 
-### 3.7 External supervision (SkillCorner open data)
+### 3.7 External supervision (SkillCorner open data) — the submitted pipeline
 
 The self-supervised stages never see a real possession label from this match. SkillCorner's
 open data (20 matches, MIT licence) provides broadcast tracking at 10 Hz plus *phases of play*:
@@ -168,8 +168,9 @@ Two gradient-boosted classifiers are trained on all 20 matches: P(away) on live 
 P(dead) on all frames. On 4 held-out matches (trained on the other 16) the team classifier is
 right on **93.6%** of live frames and the dead-ball classifier reaches **AUC 0.985**.
 
-In the final decode the SkillCorner team evidence replaces ours, and the two dead-ball
-probabilities are averaged in log-odds. The table shows each weight on the public window:
+During development we first blended this evidence with ours. The table shows each blend weight
+on the public window. **It is a development record, not how settings were chosen**: under the
+3 November clarification the public ground truth may not be used for tuning.
 
 | SkillCorner weight (team / dead) | spellF1 | macroF1 |
 |---|---|---|
@@ -179,11 +180,14 @@ probabilities are averaged in log-odds. The table shows each weight on the publi
 | 1 / 0.5 | 0.643 | 0.908 |
 | 1 / 1 | 0.621 | 0.894 |
 
-With sharper evidence the old switching cost (30) merges too much: about 220 full-match
-possessions of mean 15.5 s. We lower it to 20, which gives 234 possessions of mean 14.6 s, the
-closest to the 14.2 s of the public truth. Public spellF1 at that cost is 0.621 against 0.643 at
-30: one possession out of 17. We chose the setting with the more plausible full match over the
-better public number.
+**Submitted configuration.** The submission uses the SkillCorner classifiers alone, for both
+team and dead ball. The dead-ball logistic regression fitted on the public window is dropped. We
+chose the decoder settings by 4-fold cross-validation over the 20 SkillCorner matches. For each
+fold, both classifiers are fitted on 15 matches, and the other 5 are decoded at 25 Hz exactly
+as BAR–ATH is and scored with the official spellF1 against SkillCorner's labels. The grid has 60
+settings: switching cost 10–40, dead-ball cost 10–30, minimum stoppage 1–2 s, and with or
+without §3.6's refinement. The best is switching 30, dead 30, minimum 1 s, no refinement, with
+**held-out spellF1 0.697 / macroF1 0.909**. The top ten settings lie within 0.003.
 
 ### 3.8 A known stoppage
 
@@ -204,7 +208,8 @@ first half is graded from its kickoff, so the public window is unaffected.
 | + lag correction | 0.467 | 0.814 | 19 | 302 / 10.8 s |
 | + self-training | 0.503 | 0.833 | 14 | 272 / 12.1 s |
 | + boundary refinement | 0.542 | 0.867 | 14 | 269 / 13.1 s |
-| **+ SkillCorner classifiers + known stoppage (final)** | **0.621** | **0.905** | 12 | 234 / 14.6 s |
+| + SkillCorner classifiers, blended (development) | 0.621 | 0.905 | 12 | 234 / 14.6 s |
+| **submitted: SkillCorner only, settings tuned on SkillCorner** | **0.607** | **0.843** | 12 | 211 / 15.7 s |
 
 ![Ablation](figs/ablation.png)
 *Figure 1. Ablation on the public window.*
@@ -214,8 +219,9 @@ steps in this table are not statistically separable. Two numbers are informative
 
 - The jump from either signal alone (0.36–0.39) to their combination under the decoder (0.51).
 - The macroF1 gain from refinement (0.833 → 0.867), which comes from restart timing.
-- The gain from external supervision (0.867 → 0.905 macroF1), which is consistent with its
-  93.6% held-out accuracy on other matches.
+- The external pipeline reaches 0.607 spellF1 with no BAR–ATH label used anywhere, against 0.542
+  for the development version that did use the public window. Its lower macroF1 (0.843) comes
+  from dead-ball timing: SkillCorner's dead-ball labels are weak (§6).
 
 The lag correction lowers the public score at that intermediate step: 0.508 to 0.467, which is
 one possession out of 17. In the final pipeline it does not. With every other stage in place,
@@ -283,12 +289,26 @@ the evaluation noise.
 - **Zone-dependent switching.** Possession changes are more frequent in midfield duels than in a
   team's own third, so the switching cost could depend on where the ball is.
 
-## 7. Reproducibility and data handling
+## 7. Compliance with the rules clarification
+
+The organisers' clarification of 3 November 2026 forbids training, fitting, calibrating or
+tuning on the ground truth or the video. In the development version (§3.1–3.6), the dead-ball
+model was fitted on the public 5 minutes, and some settings were read off that window, which
+the original documentation allowed. **The submitted file comes from `run_external()` only**:
+- classifiers trained on SkillCorner;
+- decoder settings from cross-validation on SkillCorner;
+- the documented pre-kickoff stoppage.
+
+The public window is scored after the fact, as an automatic check, and drives no choice.
+Every table above marked "public window" is a record of development, not a selection
+criterion for the submission.
+
+## 8. Reproducibility and data handling
 
 `./reproduce.sh` clears every cached result, parses the data, downloads SkillCorner's open data
-at a pinned commit (about 1.9 GB, kept if present), builds and fits its classifiers, runs the
-model and validates the file. From-scratch runs produce the same CSV byte for byte (about 25
-minutes on an Apple M1).
+at a pinned commit (about 1.9 GB, kept if present), builds and fits its classifiers, reruns the
+cross-validated tuning, runs `run_external()` and validates the file. From-scratch runs produce
+the same CSV byte for byte (about 50 minutes on an Apple M1).
 The classifiers use fixed seeds and no random validation splits, and caches are keyed by content
 hashes. `paper/collect.py` and `paper/make_figs.py` regenerate every number and figure in this
 document.

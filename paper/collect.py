@@ -43,12 +43,16 @@ def ablation(gt):
               ("+ lag correction", dict(off, shape_lag=30)),
               ("+ self-training", dict(off, shape_lag=30, self_iters=1, self_lag=5)),
               ("+ boundary refinement", no_sc),
-              ("+ SkillCorner + known stoppage (final)", {})]
+              ("+ SkillCorner, blended (development)", {})]
     rows = []
     for name, over in ladder:
         lab, _ = M.run(dict(M.PARAMS, **over), gt=gt)
         rows.append((name,) + score(lab, gt) + full_stats(lab))
         print("%-38s spell %.3f macro %.3f" % (name, rows[-1][1], rows[-1][2]), flush=True)
+    lab = M.run_external()
+    rows.append(("submitted: SkillCorner only, tuned on SkillCorner",) + score(lab, gt)
+                + full_stats(lab))
+    print("%-38s spell %.3f macro %.3f" % (rows[-1][0][:38], rows[-1][1], rows[-1][2]))
     return rows
 
 

@@ -2,174 +2,135 @@
 
 **Team:** Cochinae (Sebastian Dulong Salazar, Santiago Fernández del Castillo, Ulises Quevedo)  
 **Challenge:** More than a Hack 2027, Phase 1 — Ball Possession (FC Barcelona vs Athletic Club)  
-**Code:** this repository. `./reproduce.sh` regenerates `Cochinae.csv` byte for byte.
+**Code:** https://github.com/dulongski/cochinae-mtah-2027 · `./reproduce.sh` regenerates `Cochinae.csv` byte for byte.
 
 ---
 
 ## 1. Approach in one paragraph
 
-Possession is decided by two kinds of evidence that fail in different places. The **ball** is
-precise when it is tracked and absent when it is not. The **shape of the two teams** is always
-there but is blurry and late, because teams reorganise *after* the ball changes hands. We
-turn both into per-frame log-likelihoods for `H`, `A` and `D`. We then decode the whole half
-at once with a Viterbi pass that charges a fixed cost for every change of possession and every
-stoppage, so the output is a set of whole possessions rather than a flicker of frames. A round
-of self-training sharpens the team evidence. Then the same features, computed on 20 public
-SkillCorner matches with provider possession phases, train supervised team and dead-ball
-classifiers, which drive the final decode. Finally, a boundary-refinement step moves each
-stoppage edge onto the moment the players' speed shows a restart.
+We read possession from the geometry of the 22 players and the ball. We learn that reading on
+**external data only**: 20 public SkillCorner matches whose provider "phases of play" say which
+team has the ball. Two gradient-boosted classifiers, one for the team in possession and one for
+dead ball, see the same 121 features on SkillCorner and on BAR–ATH. A Viterbi decoder with
+switching costs and a minimum stoppage length turns their per-frame probabilities into whole
+possessions. Every decoder setting was chosen by cross-validation on SkillCorner. **Nothing is
+trained, fitted or tuned on the BAR–ATH ground truth or video**, as the organisers' 3 November
+clarification requires. The public 5 minutes are scored only afterwards, as a check.
 
-No stage is trained on hand labels. The first team classifiers are self-supervised from the
-tracking itself, and the final ones learn from SkillCorner's provider labels on other matches.
-The public 5-minute ground truth is used for one small model (the dead-ball logistic
-regression, 8 coefficients), and inside that window its predictions are out-of-fold.
+## 2. Submitted pipeline (`run_external()` in `cochinae/model.py`)
 
-## 2. Pipeline
-
-| stage | what it does | trained on |
+| stage | what it does | data used |
 |---|---|---|
-| `load.py` | Parses ATD and Smart Tagging into arrays (metres, video-frame index). | — |
-| **1. shape** | Gradient-boosted classifier, P(away has the ball) from player geometry only: team centroids, depth, width, spread, forward velocity, speeds, and their differences, each with ±0.5 s and ±2 s rolling context. All oriented so "home attacks +x" in both halves. | **Self-supervised**: frames where the ball is visible, one player is within 1.5 m and the other team is ≥1 m further away (35k frames). Out-of-fold by 20,000-frame time blocks. |
-| **2. touch** | Where the ball is visible and someone is within 3 m: logit += 1.2 × (distance advantage in m, clipped ±3). | — |
-| **3. dead** | Logistic regression on 8 physical cues: player mean speed (±2 s), max speed (±3 s), share of frames the ball travels >3 m/s, share it is still, ball visibility, ball outside the pitch (±4 s), players within 5 m of the ball, ball distance to the nearest line. | Public window (4-fold out-of-fold inside it). |
-| **4. decode** | Viterbi over H / A / D per half. Switching team costs 30 nats; entering or leaving D costs 20; D is a chain of 50 sub-states, so a stoppage lasts ≥2 s. | — |
-| **5. self-train** | A second classifier using shape **plus** ball features (distances per team, oriented ball position and velocity, visibility) learns from the decoded labels, skipping ±1 s around every decoded change. Then we decode again. | Self-supervised (decoded labels), out-of-fold. |
-| **5b. SkillCorner** | The same 121 features (shape, ball context, dead-ball cues), computed on 20 SkillCorner open-data matches resampled to 25 Hz, train two gradient-boosted classifiers: P(away) on live frames and P(dead). Each frame is also added with the teams swapped and the label flipped. In the final decode the SkillCorner team evidence replaces ours, and the dead-ball probability is the 50/50 log-odds average with stage 3. The switching cost drops to 20. | SkillCorner phases of play (team in possession). Dead = in-period frames with no phase. 591k rows. Held-out 4 matches: team accuracy 0.936, dead-ball AUC 0.985. |
-| **6. refine** | Each decoded restart moves to the slowest moment of the players in the 6 s before it. Each stoppage moves to the best "fast → slow" changepoint of player speed. | — |
-| **7. known stoppage** | Graded frames 110,808–113,741 precede the second-half kickoff and are all dead ball (FAQ), so they are set to D. 1,746 of them had been decoded as live. | — |
+| `load.py` | Parses the tactical ATD into arrays: metres, video-frame index. | BAR–ATH tracking (input) |
+| **features** (`feats.py`) | **99 team-shape features** (per team: centroid, spread, depth quantiles, width, forward velocity, speeds, plus differences between the teams; each also averaged over ±0.5 s and ±2 s), **14 ball-context features** (per-team distance to the ball, oriented ball position and velocity, visibility) and **8 dead-ball cues** (player mean and maximum speed, share of time the ball travels or is still, ball visibility, ball out of the pitch, players near the ball, ball distance to the nearest line). Oriented so that home attacks +x in both halves. | input only |
+| **classifiers** (`skillcorner.py`) | Gradient-boosted P(away) on live frames and P(dead) on all frames (scikit-learn `HistGradientBoosting`, fixed seed, no early stopping). | **20 SkillCorner matches only** (591k rows; see §3) |
+| **decode** | Viterbi over H / A / D per half. Switching team costs 30 nats; entering or leaving D costs 30; D lasts at least 25 frames (1 s). | settings from §4 |
+| **known stoppage** | Graded frames 110,808–113,741 precede the second-half kickoff and are all dead ball (FAQ.md), so they are set to D. | challenge documentation |
 
-### Why these choices
+## 3. External training data
 
-- **Shape before ball.** On the public window, team shape alone puts 87.5% of live frames on
-  the right team. Nearest-player-to-ball gets 77.8%. Self-training with ball features raises it
-  to about 91%.
-- **The missing ball is mostly dead ball.** The ball is absent from 41% of graded frames, but in
-  long blocks: the median gap is 10.7 s. 93% of those frames are decoded as `D`. Inside live
-  play the ball is usually there. That is why the shape model is the safety net and not the
-  main signal during play.
-- **A minimum stoppage length is needed for correctness, not only for looks.** Without it, a
-  1-frame `D` costs two dead-ball transitions. That is cheaper than one team switch, so the
-  decoder swaps teams through a fake stoppage.
-- **Lag correction, measured without labels.** Shape evidence correlates best with ball
-  proximity when it is shifted about 30 frames earlier (cross-correlation over the whole match).
-  The self-trained model's best shift is about 5 frames. We apply both shifts.
-- **Restarts sit at the players' slowest moment.** Averaged over the public restarts, mean
-  player speed bottoms out at the restart frame (≈0.9 m/s) and climbs after it. The dead-ball
-  probability fades over 2–3 s, so the decoded restart lands late. The refinement step cut the
-  median restart error from 75 to 34 frames.
+**SkillCorner open data** (github.com/SkillCorner/opendata, commit 4340d27, MIT licence; credit
+SkillCorner and PySport) has 20 matches of 10 Hz broadcast tracking. Players are extrapolated
+off-screen, and the ball is present where detected.
 
-## 3. Possession rules we implemented
+- Each match is resampled to 25 Hz and moved to challenge coordinates (metres from a corner).
+  Then the **identical feature code** runs on it.
+- **Labels:** inside a phase of play, the team in possession. Inside a period with no phase, dead
+  ball. This makes the dead-ball labels weak, because phases can stop short of a stoppage.
+- Every frame is added a second time with the teams swapped and the label flipped, so the
+  classifiers cannot learn which side is "home". One frame is kept every 0.4 s.
+- **Held-out check** (trained on 16 matches, tested on 4): the team classifier is right on 93.6%
+  of live frames, and the dead-ball classifier reaches AUC 0.985.
 
-- **Live ball always belongs to a team.** There is no "contested" state: a loose ball stays with
-  the team that last had it until the evidence for the other team outweighs the 30-nat
-  switching cost. That cost corresponds to about 1–2 s of clear evidence. So deflections and
-  single touches without control do not change possession, while a recovery that the receiving
-  team keeps does.
-- **Short possessions are sacrificed on purpose.** Possessions under about 1 s (a touch that
-  is immediately lost) are mostly not reported. The ranking metric charges a split possession
-  twice, so missing a 1 s spell is the cheaper error.
-- **Stoppages last at least 2 s** and are only entered when the physical cues agree.
-  Dead-ball ownership is never assigned, as the rules ask.
-- **Restarts** begin when the players start moving after their slowest moment, not when the
-  dead-ball probability falls.
+## 4. Tuning, on external data only (`tune_skillcorner.py`)
 
-## 4. Assets used and dropped
+The 20 SkillCorner matches are split into 4 folds. For each fold, both classifiers are fitted on
+15 matches. The other 5 are decoded *exactly* as BAR–ATH is, at full 25 Hz resolution, and scored
+with the official `spellF1` against SkillCorner's labels. The grid has 60 settings:
 
-| asset | used? | notes |
+- switching cost 10–40;
+- dead-ball cost 10–30;
+- minimum stoppage 1 or 2 s;
+- with or without the boundary refinement described in §7.
+
+The best mean over the 20 held-out matches is **switching 30, dead 30, minimum 1 s, no
+refinement: held-out spellF1 0.697, macroF1 0.909**. The top ten settings are within 0.003 of each
+other, so the choice is not on a knife edge. `reproduce.sh` reruns this search and the model
+reads its result.
+
+## 5. Possession rules implemented
+
+- **Live ball always belongs to a team.** A loose ball stays with the team that had it until the
+  evidence for the other team outweighs the switching cost (about 1–2 s of clear evidence). So
+  deflections and uncontrolled touches do not change possession.
+- **Short possessions are sacrificed.** Spells under about 1 s are mostly merged into their
+  neighbours, because `spellF1` charges a split possession twice.
+- **Stoppages last at least 1 s.** Dead-ball ownership is never assigned, as the rules ask.
+
+## 6. Results
+
+| | spellF1 | macroF1 |
 |---|---|---|
-| Tactical ATD (players + ball) | **yes**, everything is built on it | |
-| Public 5-min ground truth | dead-ball model + sanity checks | never used to train the team models |
-| SkillCorner open data (20 matches, MIT, github.com/SkillCorner/opendata @ 4340d27) | **yes** | External supervision for the final team and dead-ball classifiers (stage 5b). Credit: SkillCorner and PySport. |
-| Smart Tagging | **dropped** | Its team tags put the right team in possession on only 70% of public live frames, worse than team shape. Its set-piece intervals added nothing to the dead-ball model once the physical cues were in. |
-| Broadcast ATD | **tried, not in the final pipeline** | `align.py` aligns it to the tactical timeline: the offset is near-constant per half (≈4,015 and ≈26,921 frames) and 95% of coarse matches agree within 1 m. But it supplies a ball on only 8.5% of the frames where the tactical ball is missing, because both cameras lose the ball in the same moments. |
-| Tactical video + homography | **tried, dropped** | `cochinae/video_ball.py` runs a detector only where the ATD has no ball and play may be live. Checked on 2,000 frames where the ATD does have the ball: COCO YOLOv8s at confidence ≥ 0.6 fires on 22% of frames and only 50% of those are within 2 m. FootAndBall fires on 29% and under 5% are within 2 m. The ball is 3–5 px in this full-pitch shot. Only about 5% of graded frames are live with no ball, so the gain is capped. Full write-up in [paper/PAPER.md](paper/PAPER.md). |
+| SkillCorner, 20 held-out matches (used for tuning) | 0.697 | 0.909 |
+| **BAR–ATH public 5 min (check only, never used for any choice)** | **0.607** | **0.843** |
+| official baseline_smooth50, public 5 min | 0.326 | 0.621 |
 
-Tried and dropped, besides the above: a "last controller keeps it" rule (best public spellF1 0.59
-using our own dead-ball mask, vs 0.60 for the HMM with the same mask), and snapping
-team switches to the changepoint of ball proximity (it made timing worse: in the automatic
-tracking the true switch is not where the new team first reaches the ball).
+On the full match the submission reports 211 possessions, mean 15.7 s, and 48% of graded time
+dead. The official scorer puts the public-window noise band near ±0.4 spellF1 (17 possessions).
 
-## 5. Results
+## 7. Development history and what we dropped
 
-Public 5-minute window (17 possessions), scored with the official `run_evaluation.py`:
+Our first version was **self-supervised**. A team-shape classifier learned from frames where the
+ball was clearly at one team's feet. Then came ball proximity, a dead-ball logistic regression
+fitted on the public 5 minutes, the same decoder, a self-training round, and a refinement that
+moved restarts to the players' slowest moment. It scored 0.542 / 0.867 on the public window.
 
-| submission | macroF1 | spellF1 | possessions |
-|---|---|---|---|
-| **Cochinae** | **0.905** | **0.621** | 12 (truth: 17) |
-| Cochinae without SkillCorner | 0.867 | 0.542 | 14 |
-| baseline_smooth125 | 0.581 | 0.424 | 16 |
-| baseline_smooth50 (the published floor) | 0.621 | 0.326 | 26 |
+The dead-ball model and several settings of that version were fitted or chosen on the public
+ground truth. The original documentation allowed that; **the 3 November clarification does
+not**, so that version is not used for the submission. Its code remains in the repository
+(`run()`), with its ablation in the paper.
 
-The official scorer's bootstrap says gaps under about 0.41 spellF1 are noise on this window, so
-we used it to check correctness rather than to choose settings. Hyperparameters were set from
-physical reasoning and from full-match plausibility, which needs no labels. The SkillCorner
-switching cost is the clearest example. At 30 it scores 0.643 on the public window but leaves
-only about 220 full-match possessions (mean 15.5 s). At 20 it gives 234 possessions of mean
-14.6 s, closest to the public truth's 14.2 s, so we use 20 despite the lower public number
-(0.621, one possession less). The final model labels 46% of graded frames dead.
+Tried and dropped, with numbers in [paper/PAPER.md](paper/PAPER.md):
 
-### Robustness checks (no ground truth needed)
-
-These were run on the self-supervised model, before stage 5b. The public window is too small to choose settings, so we checked stability on the full match
-instead. We perturbed one parameter at a time and scored each perturbed run against the
-reference run with the official metric.
-
-| perturbation | agreement with reference (spellF1) |
+| idea | why it was dropped |
 |---|---|
-| switching cost 20–40, self-training switching cost 20–40 | 0.89–0.99 |
-| dead-ball entry cost 10–30, minimum stoppage 1–4 s | 0.92–0.94 |
-| dead-ball regularisation C 0.005–1.0 (200× range) | 0.88–0.92 |
-| restart search window 4–8 s, self-training lag 0–10 frames | 0.96–0.99 |
-| shape lag 0–45 frames, proximity weight 0.6–2.0 | 0.83–0.90 (the most sensitive) |
+| Smart Tagging team tags | put the right team in possession on only 70% of live frames |
+| Last-controller rule | brittle to ball noise |
+| Snapping team switches to ball proximity | made timing worse |
+| Ball-track cleaning | no gain |
+| Broadcast tracking as a second ball source | aligned, but adds a ball on only 8.5% of missing frames |
+| Two off-the-shelf video ball detectors (YOLOv8s COCO, FootAndBall) | the ball is 3–5 px; under 50% of detections land within 2 m of it |
 
-For the two most sensitive parameters we ran a 3×3 grid and picked the **medoid**: the output
-that agrees best with the other eight. It is the setting we already use (weight 1.2, lag 30),
-with a mean agreement of 0.875. The chosen point sits in the middle of a flat region, not on
-an edge tuned to 17 public possessions.
+## 8. Limitations
 
-## 6. Limitations and what we would do next
+- **Domain shift.** SkillCorner tracking comes from broadcast video with extrapolated players;
+  the challenge tracking comes from a tactical camera. Held-out accuracy transfers across
+  SkillCorner matches, but calibration on BAR–ATH is unverified by design.
+- **Weak dead-ball labels.** Dead ball is the complement of the provider's phases.
+- **Short possessions.** Spells under about 1 s are mostly missed.
 
-- **Short possessions** (< 2 s) are mostly merged into their neighbours. A touch detector
-  trained on corrected data would recover them.
-- **Team-switch timing** still errs by about 0.4 s at the median when we find the switch, and
-  about 5 of 12 public switches are not matched within 6 s.
-- **Dead-ball labels are the weakest.** Our logistic model is fit on 4 stoppages, and
-  SkillCorner's dead ball is the complement of its phases, which can stop short of a stoppage.
-  The final probability averages the two.
-- **Domain shift:** SkillCorner comes from broadcast video with extrapolated players, the
-  challenge from a tactical camera. The held-out accuracy transfers; calibration may not.
-- **Next:** fine-tune a ball detector on this camera, using tracked ball positions projected
-  through the homography as automatic labels (off-the-shelf detectors failed, see above). Use the broadcast alignment to
-  recover the ball during replays. Learn the switching cost per field zone: switches are more
-  frequent in midfield duels than in a team's own third.
-
-## 7. Reproduction
+## 9. Reproduction
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-cochinae.txt
-MTAH_DATA_DIR=/path/to/bundle ./reproduce.sh
+MTAH_DATA_DIR=/path/to/bundle ./reproduce.sh      # ~50 min on an Apple M1
 ```
 
-The script deletes any cached intermediate results and parses the data (`cochinae/load.py`,
-about 10 s). It then downloads SkillCorner's open data at a pinned commit (about 1.9 GB, kept if
-already present), builds and fits its classifiers (`cochinae/skillcorner.py`, about 15 min), and
-runs the model (`cochinae/model.py`, about 3 min on an M1). Finally it validates the file and
-prints its SHA-256. Everything is deterministic: the classifiers have fixed seeds and
-no early-stopping splits, and caches are keyed by a content hash. Two from-scratch runs give the
-same file. The output is `evaluation/results/Cochinae.csv`.
+The script:
 
-Code map: `cochinae/load.py` (parsing), `feats.py` (shape and ball features), `model.py`
-(stages 1–5 and 7), `skillcorner.py` + `skillcorner_download.sh` (stage 5b), `refine.py` (stage 6), `evalu.py` (in-process scorer), `align.py` and
-`broadcast.py` (the broadcast experiment).
+1. deletes all cached results;
+2. parses the data;
+3. downloads SkillCorner at the pinned commit (about 1.9 GB, kept if present);
+4. builds its features and fits the classifiers;
+5. reruns the cross-validated tuning;
+6. runs `run_external()`;
+7. validates the file and prints its SHA-256.
 
-## 8. Compliance with the 3 Nov 2026 rules clarification
+Everything is deterministic: fixed seeds, no random validation splits, and content-hashed
+caches. From-scratch runs produce the same file.
 
-The submitted file comes from `run_external()` in `cochinae/model.py`. No part of it is
-trained, fitted or tuned on the BAR–ATH ground truth or video. Team and dead-ball probabilities
-come from classifiers trained only on SkillCorner open data. The decoder settings (switching
-cost 30, dead-ball cost 30, minimum stoppage 1 s, no refinement) were chosen by 4-fold
-cross-validation on the 20 SkillCorner matches (`cochinae/tune_skillcorner.py`, held-out
-spellF1 0.697 / macroF1 0.909). The public window is only scored as a check, after the fact.
-The self-supervised stages and the dead-ball model fitted on the public window, described
-above, are earlier development versions and are not used for the submission.
+**Code map:** `cochinae/load.py`, `feats.py` (features), `skillcorner.py` and
+`skillcorner_download.sh` (external data and classifiers), `tune_skillcorner.py` (tuning),
+`model.py` (`run_external` = submission; `run` = development version), `refine.py`,
+`evalu.py`. Experiments: `align.py`, `broadcast.py`, `video_ball.py`.
