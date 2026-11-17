@@ -2,8 +2,8 @@
 
 Two steps, because they run in different environments:
 
-    python -m cochinae.video_ball select                 # model env: which frames to look at
-    python -m cochinae.video_ball detect                 # vision env (ultralytics): run YOLO
+    python -m cochinae.experiments.video_ball select                 # model env: which frames to look at
+    python -m cochinae.experiments.video_ball detect                 # vision env (ultralytics): run YOLO
 
 `select` writes $CACHE/video_frames.npz: every graded frame where the ATD has no ball and the
 dead-ball model is not sure play is stopped (P(dead) < 0.95), plus a calibration sample of 2,000
@@ -22,7 +22,7 @@ import time
 
 import numpy as np
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 from games import GAME, GAMES, require, source_frames  # noqa: E402
 from cochinae.load import CACHE  # noqa: E402

@@ -1,6 +1,6 @@
 """Live progress bars for the long-running jobs (video detection).
 
-    python -m cochinae.progress              # watches $MTAH_DATA_DIR/logs/*.log, refreshes every 2 s
+    python -m cochinae.experiments.progress              # watches $MTAH_DATA_DIR/logs/*.log, refreshes every 2 s
 
 Each job writes lines like "video frame 65000  processed 740/2000  3.7 fps  eta 6 min" to its
 log; this shows the latest one per log as a bar. A log whose last line starts with "done:" is
@@ -13,7 +13,7 @@ import re
 import sys
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 from games import DATA_DIR  # noqa: E402
 

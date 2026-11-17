@@ -11,7 +11,7 @@ The broadcast feed is not synchronised, but it is near-live: after a coarse sear
   3. borrow  -- wherever the matched broadcast frame has a ball and a valid homography, that
                 ball is a candidate position for the tactical frame.
 
-    python -m cochinae.align           # writes $MTAH_CACHE/ball_broadcast.npy
+    python -m cochinae.experiments.align           # writes $MTAH_CACHE/ball_broadcast.npy
 """
 
 import os
@@ -21,7 +21,7 @@ import warnings
 import numpy as np
 from scipy.ndimage import median_filter
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 from cochinae import feats as F  # noqa: E402
 from cochinae.load import CACHE, load_cache  # noqa: E402

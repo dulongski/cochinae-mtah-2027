@@ -37,7 +37,7 @@ from cochinae.refine import refine_dead  # noqa: E402
 from games import half_video_blocks, GAME  # noqa: E402
 
 PUBLIC = (11185, 18685)  # public ground-truth window, [start, stop)
-SECOND_HALF_SETUP = (110808, 113742)  # graded, before the 2nd-half kickoff: all D (FAQ.md)
+SECOND_HALF_SETUP = (110808, 113742)  # graded, before the 2nd-half kickoff: all D (challenge FAQ)
 
 PARAMS = {
     "block": 20000,        # time-block size for out-of-fold shape predictions
@@ -60,7 +60,7 @@ PARAMS = {
     "sc_team_w": 1.0,      # weight of the SkillCorner team classifier in the final decode
     "sc_dead_w": 0.5,      # weight of the SkillCorner dead-ball classifier (blended with ours)
     "video_source": None,  # "yolo" | "fab": which video detections fill ATD ball gaps
-    "video_conf": 0.25,    # provisional; set from the calibration sample in video_ball.py
+    "video_conf": 0.25,    # provisional; set from the calibration sample in experiments/video_ball.py
     "sw_cost_self": 20.0,  # with SkillCorner evidence: mean possession closest to the public 14.2 s
 }
 
@@ -221,7 +221,7 @@ def run(params=PARAMS, gt=None, verbose=True, drop_ball=None, use_video=True):
     # 6. boundary refinement: restarts at the players' slowest moment, stoppages where they slow
     labels = refine_dead(labels, sp, params["refine_before"], params["refine_after"], "min")
 
-    # 7. known stoppage: the second half is graded from 110,808 but kicks off at 113,742 (FAQ.md,
+    # 7. known stoppage: the second half is graded from 110,808 but kicks off at 113,742 (challenge FAQ,
     # "Which frames are actually graded?"), so everything in between is a dead ball by definition.
     labels[SECOND_HALF_SETUP[0]:SECOND_HALF_SETUP[1]] = "D"
     return labels, {"p_dead": p_dead, "logit_home": logit_home}
@@ -333,7 +333,7 @@ def clean_ball(ball, max_speed=40.0, max_gap=10):
 
 
 def fill_from_video(ball, params):
-    """Fill missing ATD ball positions with video detections (see video_ball.py), if present.
+    """Fill missing ATD ball positions with video detections (see experiments/video_ball.py), if present.
 
     A detection is used when its confidence clears `video_conf`, it lies on the pitch (2 m
     margin) and another accepted detection within +/-3 frames is within 3 m of it: isolated hits

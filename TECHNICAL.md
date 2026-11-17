@@ -25,7 +25,7 @@ clarification requires. The public 5 minutes are scored only afterwards, as a ch
 | **features** (`feats.py`) | **99 team-shape features** (per team: centroid, spread, depth quantiles, width, forward velocity, speeds, plus differences between the teams; each also averaged over ±0.5 s and ±2 s), **14 ball-context features** (per-team distance to the ball, oriented ball position and velocity, visibility) and **8 dead-ball cues** (player mean and maximum speed, share of time the ball travels or is still, ball visibility, ball out of the pitch, players near the ball, ball distance to the nearest line). Oriented so that home attacks +x in both halves. | input only |
 | **classifiers** (`skillcorner.py`) | Gradient-boosted P(away) on live frames and P(dead) on all frames (scikit-learn `HistGradientBoosting`, fixed seed, no early stopping). | **20 SkillCorner matches only** (591k rows; see §3) |
 | **decode** | Viterbi over H / A / D per half. Switching team costs 30 nats; entering or leaving D costs 30; D lasts at least 25 frames (1 s). | settings from §4 |
-| **known stoppage** | Graded frames 110,808–113,741 precede the second-half kickoff and are all dead ball (FAQ.md), so they are set to D. | challenge documentation |
+| **known stoppage** | Graded frames 110,808–113,741 precede the second-half kickoff and are all dead ball (challenge FAQ), so they are set to D. | challenge documentation |
 
 ## 3. External training data
 
@@ -113,7 +113,7 @@ Tried and dropped, with numbers in [paper/PAPER.md](paper/PAPER.md):
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-cochinae.txt
+pip install -r requirements.txt
 MTAH_DATA_DIR=/path/to/bundle ./reproduce.sh      # ~50 min on an Apple M1
 ```
 
@@ -133,4 +133,4 @@ caches. From-scratch runs produce the same file.
 **Code map:** `cochinae/load.py`, `feats.py` (features), `skillcorner.py` and
 `skillcorner_download.sh` (external data and classifiers), `tune_skillcorner.py` (tuning),
 `model.py` (`run_external` = submission; `run` = development version), `refine.py`,
-`evalu.py`. Experiments: `align.py`, `broadcast.py`, `video_ball.py`.
+`evalu.py`. Experiments (not used for the submission): `cochinae/experiments/`. From the organisers, unchanged: `games.py` (match constants) and `evaluation/` (official scorer and validator).

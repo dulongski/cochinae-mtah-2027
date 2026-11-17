@@ -1,57 +1,72 @@
-# Cochinae — More than a Hack 2027, Phase 1 (Ball Possession)
+# Cochinae — More than a Hack 2027 · Ball Possession
 
-Our entry to the [More than a Hack 2027](https://github.com/metrica-sports/more-than-a-hack-2027)
-possession challenge: label every frame of FC Barcelona vs Athletic Club as `H`, `A` or `D` from
-automatic tracking.
+Team **Cochinae**: Sebastian Dulong Salazar · Santiago Fernández del Castillo · Ulises Quevedo
 
-**Two-page technical summary (the submitted document): [paper/Cochinae_two_pager.pdf](paper/Cochinae_two_pager.pdf)**
+We label every frame of FC Barcelona vs Athletic Club as **home possession** (`H`), **away
+possession** (`A`) or **dead ball** (`D`), using only the automatic tracking. We learn possession
+on 20 other matches (SkillCorner open data) and decode it into whole possessions with a few
+football rules. **Nothing is trained, fitted or tuned on this match's ground truth or video.**
 
-**Paper (method, ablations, robustness, negative results): [paper/PAPER.md](paper/PAPER.md)** · [PDF](paper/PAPER.pdf)
-
-**Technical document for the submission: [TECHNICAL.md](TECHNICAL.md)** · [PDF](TECHNICAL.pdf)
-
-**Submitted pipeline:** team and dead-ball classifiers trained only on 20 SkillCorner open-data
-matches, decoder settings tuned by cross-validation on SkillCorner (held-out spellF1 0.697),
-nothing fitted or tuned on the BAR–ATH ground truth or video (organisers' 3 Nov clarification).
-The public window below is a check only.
-
-Development history: a self-supervised team-shape classifier (who has the ball, read from the 22 players)
-plus ball-proximity evidence plus a physical dead-ball model, decoded as whole possessions with
-a Viterbi pass. Then one round of self-training, supervised classifiers trained on 20 public
-SkillCorner matches (open data, MIT; credit SkillCorner and PySport), and a restart/stoppage
-boundary refinement.
-
-| public 5-min window | macroF1 | spellF1 |
+| | spellF1 | macroF1 |
 |---|---|---|
-| **Cochinae (submitted, external data only)** | **0.843** | **0.607** |
-| Cochinae development version (used the public window; not submitted) | 0.867 | 0.542 |
-| baseline_smooth50 (published floor) | 0.621 | 0.326 |
+| SkillCorner, 20 held-out matches (used for tuning) | 0.697 | 0.909 |
+| **This match, public 5 min (check only)** | **0.607** | **0.843** |
+| Official baseline, public 5 min | 0.326 | 0.621 |
+
+## Documents
+
+- **Technical summary, 2 pages (the submitted document):** [paper/Cochinae_two_pager.pdf](paper/Cochinae_two_pager.pdf)
+- Technical document, long form: [TECHNICAL.md](TECHNICAL.md) · [PDF](TECHNICAL.pdf)
+- Full paper (method, development history, ablations, negative results): [paper/PAPER.md](paper/PAPER.md) · [PDF](paper/PAPER.pdf)
 
 ## Reproduce
 
-Python 3.13 (tested on macOS arm64). The match data is not in this repository. Get the bundle
-from the organisers and point `MTAH_DATA_DIR` at it (it must contain `tactical/`).
+Python 3.13, tested on macOS arm64. The match data is not in this repository: get the bundle
+from the organisers and point `MTAH_DATA_DIR` at it. It must contain `tactical/`.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-cochinae.txt
+pip install -r requirements.txt
 MTAH_DATA_DIR=/path/to/bundle ./reproduce.sh     # ~50 min -> evaluation/results/Cochinae.csv
 ```
 
-The run is deterministic and starts from an empty cache, so it regenerates the submitted file
-exactly; the script prints its SHA-256.
+`reproduce.sh`:
+1. starts from an empty cache;
+2. downloads SkillCorner's open data at a pinned commit;
+3. trains and tunes on it;
+4. labels the match;
+5. validates the file.
+
+It is deterministic and regenerates the submitted file exactly. It prints the SHA-256, which
+starts with `80820af0`.
 
 ## Layout
 
 ```
-cochinae/            our code (load, feats, model, refine, evalu)
-                     experiments: align/broadcast (broadcast feed), video_ball (ball detectors),
-                     progress (live progress bars for long runs)
-paper/               the paper, its figures, and the scripts that regenerate them
-reproduce.sh         the one command that regenerates the submission
-TECHNICAL.md         the technical document
-requirements-cochinae.txt
-games.py evaluation/ starter/   the organisers' repository, unchanged (README_CHALLENGE.md)
+cochinae/                  our code
+  load.py                  parse the challenge tracking into arrays
+  feats.py                 team-shape, ball and dead-ball features
+  skillcorner.py           external data: load, features, labels, the two classifiers
+  skillcorner_download.sh  download SkillCorner open data (pinned commit)
+  tune_skillcorner.py      decoder settings by cross-validation on SkillCorner
+  model.py                 run_external(): the submitted pipeline (run(): development version)
+  refine.py, evalu.py      boundary refinement, in-process scorer
+  experiments/             not used for the submission: broadcast alignment, video ball
+                           detectors, live progress bars
+paper/                     two-pager, paper, figures and the scripts that regenerate them
+reproduce.sh               the one command that regenerates the submission
+TECHNICAL.md / .pdf        technical document
+requirements.txt           pinned dependencies
+
+games.py, evaluation/      from the organisers' repository, unchanged: match constants and the
+                           official scorer / validator
 ```
 
-The organisers' code and docs are MIT-licensed (see LICENSE). Our code is under the same licence.
+## Data and credits
+
+- Challenge data © the organisers. It is not redistributed here.
+- [SkillCorner open data](https://github.com/SkillCorner/opendata), MIT licence. Credit to
+  SkillCorner and PySport.
+- `games.py` and `evaluation/` come from the
+  [challenge repository](https://github.com/metrica-sports/more-than-a-hack-2027), MIT licence
+  (see LICENSE). Our code is under the same licence.

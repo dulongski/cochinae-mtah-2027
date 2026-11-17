@@ -5,7 +5,7 @@ import sys
 
 import numpy as np
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 from cochinae.load import CACHE, parse_atd, team_of_slots  # noqa: E402
 from games import GAME, GAMES, require, source_frames  # noqa: E402
