@@ -36,6 +36,7 @@ from cochinae.refine import refine_dead  # noqa: E402
 from games import half_video_blocks, GAME  # noqa: E402
 
 PUBLIC = (11185, 18685)  # public ground-truth window, [start, stop)
+SECOND_HALF_SETUP = (110808, 113742)  # graded, before the 2nd-half kickoff: all D (FAQ.md)
 
 PARAMS = {
     "block": 20000,        # time-block size for out-of-fold shape predictions
@@ -204,6 +205,10 @@ def run(params=PARAMS, gt=None, verbose=True, drop_ball=None, use_video=True):
 
     # 6. boundary refinement: restarts at the players' slowest moment, stoppages where they slow
     labels = refine_dead(labels, sp, params["refine_before"], params["refine_after"], "min")
+
+    # 7. known stoppage: the second half is graded from 110,808 but kicks off at 113,742 (FAQ.md,
+    # "Which frames are actually graded?"), so everything in between is a dead ball by definition.
+    labels[SECOND_HALF_SETUP[0]:SECOND_HALF_SETUP[1]] = "D"
     return labels, {"p_dead": p_dead, "logit_home": logit_home}
 
 
