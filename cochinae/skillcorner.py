@@ -106,6 +106,21 @@ def nearest(x):
     return x[np.round(t).astype(int).clip(0, n - 1)]
 
 
+def match_full(mid):
+    """Every 25 Hz frame of one match, teams as given: (X, labels, half, player speed)."""
+    from cochinae import model as M
+    xy10, ball10, team, lab10, per10 = load_match(mid)
+    xy, ball = upsample(xy10), upsample(ball10)
+    lab, half = nearest(lab10), nearest(per10)
+    sp = F.rolling_mean(np.linalg.norm(np.gradient(xy, axis=0), axis=2) * F.FPS, 6).astype(np.float32)
+    sign = F.attack_sign(xy, team, half)
+    S, names = F.team_shape(xy, sp, team, sign)
+    X, _ = F.with_context(S, names)
+    bf = F.ball_feats(xy, team, np.c_[ball, np.full(len(ball), np.nan)])
+    X = np.concatenate([X, M.ball_context(bf, sign), M.dead_features(xy, sp, bf, len(xy))], 1)
+    return X.astype(np.float32), np.where(half > 0, lab, "X"), half, sp
+
+
 def match_features(mid):
     from cochinae import model as M
     xy10, ball10, team, lab10, per10 = load_match(mid)

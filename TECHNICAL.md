@@ -162,3 +162,14 @@ same file. The output is `evaluation/results/Cochinae.csv`.
 Code map: `cochinae/load.py` (parsing), `feats.py` (shape and ball features), `model.py`
 (stages 1–5 and 7), `skillcorner.py` + `skillcorner_download.sh` (stage 5b), `refine.py` (stage 6), `evalu.py` (in-process scorer), `align.py` and
 `broadcast.py` (the broadcast experiment).
+
+## 8. Compliance with the 3 Nov 2026 rules clarification
+
+The submitted file comes from `run_external()` in `cochinae/model.py`. No part of it is
+trained, fitted or tuned on the BAR–ATH ground truth or video. Team and dead-ball probabilities
+come from classifiers trained only on SkillCorner open data. The decoder settings (switching
+cost 30, dead-ball cost 30, minimum stoppage 1 s, no refinement) were chosen by 4-fold
+cross-validation on the 20 SkillCorner matches (`cochinae/tune_skillcorner.py`, held-out
+spellF1 0.697 / macroF1 0.909). The public window is only scored as a check, after the fact.
+The self-supervised stages and the dead-ball model fitted on the public window, described
+above, are earlier development versions and are not used for the submission.

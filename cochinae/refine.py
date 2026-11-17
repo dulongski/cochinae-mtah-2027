@@ -70,7 +70,7 @@ def _best_split(seg, before_high):
     return int(k[np.argmax(gain)])
 
 
-def refine_dead(labels, sp, before=150, after=25, mode="split"):
+def refine_dead(labels, sp, before=150, after=25, mode="split", blocks=None):
     """Move D boundaries to the player-speed changepoint.
 
     restart (D -> live): players are slowest at the restart and accelerate after it.
@@ -79,7 +79,7 @@ def refine_dead(labels, sp, before=150, after=25, mode="split"):
     spd = F.rolling_mean(np.nanmean(sp, 1), 6)
     spd = np.where(np.isfinite(spd), spd, np.nanmedian(spd))
     out = labels.copy()
-    for _, s, e in F.half_video_blocks(F.GAME):
+    for _, s, e in (blocks or F.half_video_blocks(F.GAME)):
         rr = runs(labels, s, e)
         for (a0, b0, l0), (a1, b1, l1) in zip(rr[:-1], rr[1:]):
             t = b0

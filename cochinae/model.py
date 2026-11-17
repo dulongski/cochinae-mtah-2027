@@ -17,6 +17,7 @@ Pipeline
 """
 
 import hashlib
+import json
 import os
 import sys
 
@@ -226,12 +227,12 @@ def run(params=PARAMS, gt=None, verbose=True, drop_ball=None, use_video=True):
     return labels, {"p_dead": p_dead, "logit_home": logit_home}
 
 
-def decode(logit_home, p_dead, params, sw_cost):
+def decode(logit_home, p_dead, params, sw_cost, blocks=None):
     lp_home = -np.logaddexp(0, -logit_home)
     lp_away = -np.logaddexp(0, logit_home)
     ll = np.stack([np.log(1 - p_dead) + lp_home, np.log(1 - p_dead) + lp_away, np.log(p_dead)], 1)
     labels = np.full(len(ll), "X", dtype="<U1")
-    for _, s, e in half_video_blocks(GAME):
+    for _, s, e in (blocks or half_video_blocks(GAME)):
         path = viterbi(ll[s:e + 1], sw_cost, params["dead_cost"], params["dead_min"])
         labels[s:e + 1] = np.array(["H", "A", "D"])[path]
     return labels
@@ -372,10 +373,34 @@ def sp_cache():
     return load_cache()[1]
 
 
+def run_external():
+    """The submitted pipeline. Uses no BAR-ATH ground truth anywhere.
+
+    Team and dead-ball probabilities come from the classifiers trained on SkillCorner
+    (skillcorner.py). The decoder's switching cost, dead-ball cost, minimum stoppage length and
+    whether to refine boundaries are read from sc_tuned.json, chosen by cross-validation on
+    SkillCorner (tune_skillcorner.py). The only BAR-ATH-specific rule is the documented
+    pre-kickoff stoppage of the second half.
+    """
+    tuned = json.load(open(os.path.join(CACHE, "sc_tuned.json")))
+    params = dict(PARAMS, dead_cost=tuned["dead_cost"], dead_min=int(tuned["dead_min"]))
+    xy, sp, ball, team, _ = load_cache()
+    half = F.halves_mask(len(xy))
+    sign = F.attack_sign(xy, team, half)
+    bf = F.ball_feats(xy, team, ball)
+    D = dead_features(xy, sp, bf, len(xy))
+    p_away, p_dead = skillcorner_probs(xy, sp, team, sign, bf, D)
+    labels = decode(-np.log(p_away / (1 - p_away)), p_dead, params, tuned["sw_cost"])
+    if tuned["refine"]:
+        labels = refine_dead(labels, sp, params["refine_before"], params["refine_after"], "min")
+    labels[SECOND_HALF_SETUP[0]:SECOND_HALF_SETUP[1]] = "D"
+    return labels
+
+
 if __name__ == "__main__":
     from cochinae.evalu import gt_labels, score
-    gt = gt_labels()
-    labels, aux = run(gt=gt)
+    labels = run_external()
+    gt = gt_labels()          # read only to print a check score; nothing above depends on it
     graded = F.halves_mask(len(labels)) > 0
     s = score(labels, gt)
     ch = np.sum(labels[1:][graded[1:]] != labels[:-1][graded[1:]])
