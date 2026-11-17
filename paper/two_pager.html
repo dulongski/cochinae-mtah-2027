@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cochinae — Who has the ball?</title>
+<style>
+@page { size: A4; margin: 13mm 13mm 12mm 13mm; }
+:root { --ink:#16213a; --muted:#5b6475; --accent:#b8322a; --teal:#1f7a62; --line:#d9dde4; --soft:#f3f5f8; }
+* { box-sizing: border-box; }
+body { margin:0; font-family: "Charter","Iowan Old Style",Georgia,serif; font-size:9.6pt; line-height:1.42; color:var(--ink); background:#fff; }
+header { text-align:center; padding-bottom:7px; border-bottom:1.2px solid var(--ink); margin-bottom:9px; }
+h1 { font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; font-size:15.5pt; margin:0 0 3px; letter-spacing:-0.2px; }
+.sub { font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; font-size:8.6pt; color:var(--muted); }
+.abstract { font-size:8.6pt; margin:7px 6% 0; text-align:justify; }
+.abstract b { color:var(--ink); }
+.cols { column-count:2; column-gap:7mm; column-fill:balance; }
+h2 { font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; font-size:9.6pt; margin:9px 0 3px; text-transform:uppercase; letter-spacing:.4px; color:var(--ink); break-after:avoid; }
+h2 span { color:var(--accent); margin-right:4px; }
+p { margin:0 0 5px; text-align:justify; hyphens:auto; }
+ul, ol { margin:2px 0 6px 0; padding-left:14px; }
+li { margin-bottom:2.5px; text-align:justify; }
+.h { break-inside:auto; font-family:"Charter","Iowan Old Style",Georgia,serif; background:var(--soft); border-left:2.5px solid var(--accent); padding:4px 6px 4px 7px; margin:0 0 5px; }
+.h b.t { font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; font-size:8.6pt; display:block; margin-bottom:1px; }
+.h b.t i { font-style:normal; color:var(--accent); margin-right:4px; }
+table { width:100%; border-collapse:collapse; font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; font-size:7.8pt; margin:3px 0 6px; break-inside:avoid; }
+th, td { border-bottom:1px solid var(--line); padding:2.5px 3px; text-align:left; vertical-align:top; }
+th { border-bottom:1.2px solid var(--ink); font-weight:600; }
+td.n, th.n { text-align:right; white-space:nowrap; }
+tr.me td { font-weight:700; color:var(--accent); }
+figure { margin:2px 0 7px; break-inside:avoid; }
+figcaption { font-size:7.6pt; color:var(--muted); margin-top:2px; }
+code { font-family:Menlo,monospace; font-size:7.4pt; background:var(--soft); padding:0 2px; border-radius:2px; }
+.small { font-size:7.8pt; color:var(--muted); }
+.box { break-inside:avoid; border:1px solid var(--line); padding:5px 7px; margin:4px 0 7px; font-size:8.2pt; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Who has the ball? Possession from automatic tracking, learned on other matches</h1>
+  <div class="sub">Team <b>Cochinae</b> — Sebastian Dulong Salazar · Santiago Fernández del Castillo · Ulises Quevedo<br>
+  More than a Hack 2027 · Initial Challenge · code: github.com/dulongski/cochinae-mtah-2027</div>
+  <div class="abstract">We label every frame of FC Barcelona vs Athletic Club as <b>home</b>, <b>away</b> or <b>dead ball</b>. We read it from the shape of the 22 players and from the ball, learn that reading on <b>20 other matches</b> (SkillCorner open data), and decode it into whole possessions with a few football rules. Nothing is trained or tuned on this match's labels or video. Held-out on other matches: <b>spellF1 0.697</b>. Public check on this match: <b>spellF1 0.607 / macroF1 0.843</b> (baseline 0.326 / 0.621).</div>
+</header>
+
+<div class="cols">
+
+<h2><span>1</span>The task, and why it is about intervals</h2>
+<p>Each of the 199,319 video frames gets <code>H</code>, <code>A</code> or <code>D</code>. The ranking metric, <b>spellF1</b>, does not count frames. It counts <b>possessions</b>, and a predicted possession scores only if it overlaps a real one well (time-IoU 0.3–0.7). Two things follow:</p>
+<ul>
+<li><b>Flicker is fatal.</b> A model that is 90% right per frame but changes label every few frames invents hundreds of possessions and scores near zero.</li>
+<li><b>Boundaries matter.</b> A possession found one second late is worth about two thirds of one found on time.</li>
+</ul>
+<p>So we treat it as <b>cutting the match into segments</b>, not as classifying frames one by one.</p>
+
+<h2><span>2</span>Data we use</h2>
+<table>
+<tr><th>source</th><th>role</th></tr>
+<tr><td>Challenge tracking (players + ball, tactical camera)</td><td>input only</td></tr>
+<tr><td>Challenge documentation (FAQ: graded halves, kickoff frames)</td><td>one fixed rule (H8)</td></tr>
+<tr><td><b>SkillCorner open data</b>: 20 matches, tracking + “phases of play” with the team in possession (MIT licence)</td><td><b>all training and all tuning</b></td></tr>
+</table>
+<p class="small">Not used for training or tuning: the ground truth and the video of this match. The public 5 minutes are scored only at the end, as a check. Smart Tagging, the broadcast feed and the video were tried as inputs and dropped (§6).</p>
+
+<figure>
+<svg viewBox="0 0 330 118" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica Neue,Arial,sans-serif" font-size="7.4">
+  <defs><marker id="a" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#16213a"/></marker></defs>
+  <rect x="2" y="6" width="74" height="34" rx="4" fill="#f3f5f8" stroke="#16213a"/>
+  <text x="39" y="20" text-anchor="middle" font-weight="600">Tracking</text><text x="39" y="31" text-anchor="middle">22 players + ball</text>
+  <rect x="2" y="70" width="74" height="40" rx="4" fill="#fbeceb" stroke="#b8322a"/>
+  <text x="39" y="84" text-anchor="middle" font-weight="600" fill="#b8322a">SkillCorner</text><text x="39" y="95" text-anchor="middle">20 matches with</text><text x="39" y="104" text-anchor="middle">possession labels</text>
+  <rect x="98" y="6" width="70" height="34" rx="4" fill="#fff" stroke="#16213a"/>
+  <text x="133" y="20" text-anchor="middle" font-weight="600">121 features</text><text x="133" y="31" text-anchor="middle">shape · ball · stops</text>
+  <rect x="98" y="70" width="70" height="40" rx="4" fill="#fff" stroke="#b8322a"/>
+  <text x="133" y="84" text-anchor="middle" font-weight="600">2 classifiers</text><text x="133" y="95" text-anchor="middle">P(away), P(dead)</text><text x="133" y="104" text-anchor="middle">+ tuned settings</text>
+  <rect x="190" y="30" width="62" height="56" rx="4" fill="#16213a"/>
+  <text x="221" y="50" text-anchor="middle" font-weight="600" fill="#fff">Decoder</text><text x="221" y="61" text-anchor="middle" fill="#fff">sticky possession,</text><text x="221" y="71" text-anchor="middle" fill="#fff">stoppages ≥ 1 s</text>
+  <rect x="270" y="38" width="56" height="40" rx="4" fill="#e7f3ef" stroke="#1f7a62"/>
+  <text x="298" y="54" text-anchor="middle" font-weight="600" fill="#1f7a62">H · A · D</text><text x="298" y="65" text-anchor="middle">per frame</text>
+  <path d="M76,23 L96,23" stroke="#16213a" marker-end="url(#a)"/>
+  <path d="M76,90 L96,90" stroke="#b8322a" marker-end="url(#a)"/>
+  <path d="M39,40 L39,52 L133,52 L133,68" stroke="#b8322a" stroke-dasharray="3 2" fill="none" marker-end="url(#a)"/>
+  <text x="86" y="49" fill="#b8322a" font-size="6.6">same feature code</text>
+  <path d="M168,23 L180,23 L180,46 L188,46" stroke="#16213a" fill="none" marker-end="url(#a)"/>
+  <path d="M168,90 L180,90 L180,70 L188,70" stroke="#b8322a" fill="none" marker-end="url(#a)"/>
+  <path d="M252,58 L268,58" stroke="#16213a" marker-end="url(#a)"/>
+</svg>
+<figcaption><b>Figure 1.</b> The same feature code runs on SkillCorner (to learn) and on this match (to predict). Red = learned on external data only.</figcaption>
+</figure>
+
+<h2><span>3</span>The heuristics</h2>
+<p>Each heuristic is a piece of football common sense, written as a feature or as a rule.</p>
+
+<div class="h"><b class="t"><i>H1</i>The team with the ball spreads out and pushes up.</b>
+In possession, a team gets wider, longer and higher, and runs forward. The team without it compacts and drops. We measure this every frame for both teams: 33 shape descriptors (centroid, spread, width, depth, forward speed, and the differences between teams), each also averaged over ±0.5 s and ±2 s. Shape is available even when the ball is not.</div>
+
+<div class="h"><b class="t"><i>H2</i>Whoever is closest to the ball probably has it, but only when someone is close.</b>
+When the ball is tracked, the distance from each team to it, and their difference, is strong evidence. When nobody is within a few metres (a pass in flight), it says little, and the model learns to discount it.</div>
+
+<div class="h"><b class="t"><i>H3</i>A dead ball looks physical.</b>
+In a stoppage players slow down, the ball stops travelling or leaves the pitch, and it often sits near a line with one or two players around it (throw-ins, corners, goal kicks). Eight simple cues describe exactly that.</div>
+
+<div class="h"><b class="t"><i>H4</i>A missing ball usually means a stoppage.</b>
+The ball is missing on 41% of graded frames, but in long blocks (median 11 s), and almost all of those end up decoded as dead ball. Ball visibility is therefore a feature, not just a gap to fill.</div>
+
+<div class="h"><b class="t"><i>H5</i>“Home” is not a style.</b>
+Every training frame is also shown with the two teams swapped and the label flipped. The model must recognise <i>possession</i>, not Barcelona.</div>
+
+<div class="h"><b class="t"><i>H6</i>Possession is sticky.</b>
+A touch or a deflection does not change possession; control does. The decoder (Viterbi) pays a fixed cost to switch team, so a switch needs about 1–2 s of clear evidence. A loose ball stays with the last team in control.</div>
+
+<div class="h"><b class="t"><i>H7</i>Stoppages are real stoppages.</b>
+A dead-ball stretch lasts at least 1 s and costs something to enter and leave. Without this, the cheapest way for the decoder to change team is a fake one-frame stoppage, and it finds it.</div>
+
+<div class="h"><b class="t"><i>H8</i>Use what is known for sure.</b>
+The documentation states that the graded frames before the second-half kickoff (110,808–113,741) are all dead ball, so we set them to <code>D</code>. 1,746 of them would otherwise have been called live.</div>
+
+<h2><span>4</span>Learning without the answer key</h2>
+<p>SkillCorner's 20 matches are resampled to 25 Hz and moved to the same pitch coordinates. Labels come from their phases of play: the team in possession inside a phase, dead ball elsewhere. That gives 591k training frames, one every 0.4 s, with the swap of H5. Two gradient-boosted classifiers (scikit-learn) learn <b>P(away)</b> on live frames and <b>P(dead)</b> on all frames.</p>
+<p><b>Tuning is cross-validated on SkillCorner too.</b> In each of 4 folds we train on 15 matches and decode the other 5 exactly as we decode Barça–Athletic, then score them with the official spellF1. We search 60 decoder settings: switching cost, stoppage cost, minimum stoppage length, and an optional boundary refinement. The winner is switching 30, stoppage 30, minimum 1 s, no refinement. The top ten settings lie within 0.003, so the choice is stable.</p>
+
+<div class="box"><b>Held-out on other matches:</b> the team classifier is right on 93.6% of live frames, and the dead-ball classifier reaches AUC 0.985 (16 train / 4 test). The full decoder scores spellF1 0.697 and macroF1 0.909 (20 matches, 4-fold).</div>
+<figure>
+<img src="figs/tuning.png" style="width:100%">
+<figcaption><b>Figure 2.</b> Tuning on SkillCorner only (20 held-out matches). Possession is flat for any switching cost from 15 to 40 (H6), so the choice is not fragile. Moving restarts to the players' slowest moment, a rule we had used before, costs 0.06 on other matches, so it is off.</figcaption>
+</figure>
+
+<h2><span>5</span>Results</h2>
+<table>
+<tr><th>evaluation</th><th class="n">spellF1</th><th class="n">macroF1</th></tr>
+<tr><td>SkillCorner, 20 held-out matches</td><td class="n">0.697</td><td class="n">0.909</td></tr>
+<tr class="me"><td>This match, public 5 min (check only)</td><td class="n">0.607</td><td class="n">0.843</td></tr>
+<tr><td>Official baseline, public 5 min</td><td class="n">0.326</td><td class="n">0.621</td></tr>
+</table>
+<p>On the full match we report 211 possessions (mean 15.7 s) and 48% of graded time dead. With only 17 possessions in the public window, its noise band is about ±0.4 spellF1. That is why no choice was made on it.</p>
+
+<h2><span>6</span>Tried and dropped</h2>
+<ul>
+<li><b>Self-supervised version.</b> We learned shape from frames where the ball is at one player's feet, then self-trained. It scored 0.542 on the public check. It used the public window for one small model, so we replaced it to comply with the rules.</li>
+<li><b>Smart Tagging team tags:</b> right on only 70% of live frames. Its set pieces added nothing.</li>
+<li><b>“Last player to touch it keeps it”:</b> too brittle to tracking noise.</li>
+<li><b>Ball-track cleaning</b> (removing jumps, bridging short gaps): no gain.</li>
+<li><b>Broadcast tracking</b> as a second ball: we aligned it to within a few frames, but it fills only 8.5% of the gaps, because both cameras lose the ball at the same moments.</li>
+<li><b>Off-the-shelf video ball detectors:</b> the ball is 3–5 px in this camera; fewer than half the detections fall within 2 m of it.</li>
+</ul>
+
+<h2><span>7</span>Limits and reproduction</h2>
+<p><b>Limits.</b> SkillCorner comes from broadcast video with players estimated off-screen, while this match comes from a tactical camera, so calibration may shift. Dead-ball labels are the gaps between phases, so they are weak. Possessions shorter than about 1 s are mostly merged into their neighbours.</p>
+<p><b>Reproduction.</b> <code>./reproduce.sh</code> rebuilds everything from scratch (about 50 min on a laptop): download, features, training, tuning, decoding and validation. It is deterministic, and two runs give the same file (SHA-256 <code>80820af0…</code>).</p>
+
+</div>
+</body>
+</html>

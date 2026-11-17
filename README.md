@@ -4,6 +4,8 @@ Our entry to the [More than a Hack 2027](https://github.com/metrica-sports/more-
 possession challenge: label every frame of FC Barcelona vs Athletic Club as `H`, `A` or `D` from
 automatic tracking.
 
+**Two-page technical summary (the submitted document): [paper/Cochinae_two_pager.pdf](paper/Cochinae_two_pager.pdf)**
+
 **Paper (method, ablations, robustness, negative results): [paper/PAPER.md](paper/PAPER.md)** · [PDF](paper/PAPER.pdf)
 
 **Technical document for the submission: [TECHNICAL.md](TECHNICAL.md)** · [PDF](TECHNICAL.pdf)
